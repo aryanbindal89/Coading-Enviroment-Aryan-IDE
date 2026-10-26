@@ -1,0 +1,10 @@
+{
+  "name": "Aryan Sample Tools",
+  "version": "1.0.0",
+  "description": "A sample, manifest-only extension entry for demonstrating discovery. It contributes no executable code.",
+  "entryPoint": "index.js",
+  "permissions": [],
+  "settings": [
+    { "id": "signature", "label": "Comment signature", "type": "string", "default": "Aryan IDE" }
+  ]
+}
