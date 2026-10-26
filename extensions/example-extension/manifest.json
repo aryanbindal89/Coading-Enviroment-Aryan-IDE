@@ -1,10 +1,20 @@
 {
   "name": "Aryan Sample Tools",
   "version": "1.0.0",
-  "description": "A sample, manifest-only extension entry for demonstrating discovery. It contributes no executable code.",
-  "entryPoint": "index.js",
+  "description": "A sample safe extension with a snippet command, an editor action, and an accent theme.",
   "permissions": [],
   "settings": [
     { "id": "signature", "label": "Comment signature", "type": "string", "default": "Aryan IDE" }
-  ]
+  ],
+  "contributions": {
+    "commands": [
+      { "id": "insert-greeting", "title": "Insert a greeting", "snippet": "// Hello from the Aryan sample extension\n// {{signature}}\n" }
+    ],
+    "editorActions": [
+      { "id": "insert-todo", "title": "Insert TODO comment", "snippet": "// TODO: describe the next step\n// {{signature}}\n" }
+    ],
+    "themes": [
+      { "id": "violet-dawn", "name": "Violet Dawn", "base": "dark", "accent": "#a78bfa" }
+    ]
+  }
 }

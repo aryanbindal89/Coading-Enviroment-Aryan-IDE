@@ -1,11 +1,22 @@
 export type FileEntry = { name: string; path: string; isDirectory: boolean }
+export type SearchMatch = { path: string; name: string; lineNumber: number; line: string }
 export type RunLanguage = 'c' | 'cpp' | 'python' | 'java' | 'javascript'
 export type GitStatus = { branch: string; files: { path: string; index: string; working: string; status: string }[] }
 export type AIConfig = { endpoint: string; model: string; hasKey: boolean }
+export type ExtensionSnippet = { id: string; title: string; snippet: string }
+export type ExtensionTheme = { id: string; name: string; base: 'dark' | 'light'; accent: string }
+export type ExtensionInfo = {
+  name: string; version: string; description: string; enabled: boolean
+  settings: { id: string; label: string; value: string }[]
+  commands: ExtensionSnippet[]
+  editorActions: ExtensionSnippet[]
+  themes: ExtensionTheme[]
+}
 
 export type AryanAPI = {
   openWorkspace: () => Promise<string | null>
   listDirectory: (path: string) => Promise<FileEntry[]>
+  searchText: (query: string) => Promise<SearchMatch[]>
   readFile: (path: string) => Promise<string>
   saveFile: (path: string, content: string) => Promise<void>
   createEntry: (parent: string, name: string, directory: boolean) => Promise<string>
@@ -31,8 +42,10 @@ export type AryanAPI = {
   setTheme: (theme: 'dark' | 'light') => Promise<void>
   getRuntimeConfig: () => Promise<Record<string, string>>
   setRuntimeConfig: (config: Record<string, string>) => Promise<void>
-  listExtensions: () => Promise<{ name: string; version: string; description: string; enabled: boolean; settings: { id: string; label: string; value: string }[] }[]>
+  listExtensions: () => Promise<ExtensionInfo[]>
   setExtensionEnabled: (name: string, enabled: boolean) => Promise<void>
   setExtensionSetting: (name: string, id: string, value: string) => Promise<void>
+  getActiveExtensionTheme: () => Promise<{ name: string; id: string } | null>
+  setActiveExtensionTheme: (theme: { name: string; id: string } | null) => Promise<void>
   windowControl: (action: 'minimize' | 'maximize' | 'close') => Promise<void>
 }

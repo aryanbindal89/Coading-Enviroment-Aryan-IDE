@@ -4,6 +4,7 @@ import type { AryanAPI } from '../shared/types'
 const api: AryanAPI = {
   openWorkspace: () => ipcRenderer.invoke('workspace:open'),
   listDirectory: (path) => ipcRenderer.invoke('workspace:list', path),
+  searchText: (query) => ipcRenderer.invoke('workspace:search-text', query),
   readFile: (path) => ipcRenderer.invoke('workspace:read', path),
   saveFile: (path, content) => ipcRenderer.invoke('workspace:save', path, content),
   createEntry: (parent, name, directory) => ipcRenderer.invoke('workspace:create', parent, name, directory),
@@ -32,6 +33,8 @@ const api: AryanAPI = {
   listExtensions: () => ipcRenderer.invoke('extensions:list'),
   setExtensionEnabled: (name, enabled) => ipcRenderer.invoke('extensions:set-enabled', name, enabled),
   setExtensionSetting: (name, id, value) => ipcRenderer.invoke('extensions:set-setting', name, id, value),
+  getActiveExtensionTheme: () => ipcRenderer.invoke('extensions:active-theme'),
+  setActiveExtensionTheme: (theme) => ipcRenderer.invoke('extensions:set-active-theme', theme),
   windowControl: (action) => ipcRenderer.invoke('window:control', action)
 }
 contextBridge.exposeInMainWorld('aryan', api)

@@ -9,6 +9,7 @@ import os from 'node:os'
 import type { IPty } from 'node-pty'
 import type { RunLanguage } from '../shared/types'
 import { isWithinRoot } from './workspace-path.cjs'
+import { buildExecutionPlan } from './runner-plan.cjs'
 
 const execFileAsync = promisify(execFile)
 let mainWindow: BrowserWindow | null = null
@@ -18,7 +19,7 @@ const terminals = new Map<string, IPty | ReturnType<typeof spawn>>()
 const appStatePath = () => path.join(app.getPath('userData'), 'settings.json')
 const aiSecretsPath = () => path.join(app.getPath('userData'), 'ai-credentials.json')
 
-type AppState = { theme?: 'dark' | 'light'; runtimes?: Record<string, string>; extensionEnabled?: Record<string, boolean>; extensionSettings?: Record<string, Record<string, string>> }
+type AppState = { theme?: 'dark' | 'light'; runtimes?: Record<string, string>; extensionEnabled?: Record<string, boolean>; extensionSettings?: Record<string, Record<string, string>>; extensionTheme?: { name: string; id: string } | null }
 async function readState(): Promise<AppState> {
   try { return JSON.parse(await readFile(appStatePath(), 'utf8')) as AppState } catch { return {} }
 }
@@ -26,6 +27,28 @@ async function writeState(next: AppState) {
   await mkdir(app.getPath('userData'), { recursive: true })
   const current = await readState()
   await writeFile(appStatePath(), JSON.stringify({ ...current, ...next }, null, 2), 'utf8')
+}
+const extensionRoots = () => [path.join(app.getAppPath(), 'extensions'), path.join(app.getPath('userData'), 'extensions')]
+async function readExtensionManifest(name: string, themeId?: string) {
+  for (const root of extensionRoots()) {
+    let directories
+    try { directories = await readdir(root, { withFileTypes: true }) } catch { continue }
+    for (const directory of directories) {
+      if (!directory.isDirectory()) continue
+      try {
+        const manifestFile = path.join(root, directory.name, 'manifest.json')
+        if ((await stat(manifestFile)).size > 256 * 1024) continue
+        const manifest = JSON.parse(await readFile(manifestFile, 'utf8'))
+        if (manifest.name !== name) continue
+        if (themeId) {
+          const themes = Array.isArray(manifest.contributions?.themes) ? manifest.contributions.themes : []
+          if (!themes.some((theme: any) => theme && theme.id === themeId && (theme.base === 'dark' || theme.base === 'light') && typeof theme.accent === 'string' && /^#[0-9a-fA-F]{6}$/.test(theme.accent))) continue
+        }
+        return manifest
+      } catch { /* ignore invalid extension files */ }
+    }
+  }
+  return null
 }
 function send(channel: string, payload: unknown) { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload) }
 function assertText(value: unknown, label: string, max = 2000): asserts value is string {
@@ -70,7 +93,12 @@ async function runCommand(executable: string, args: string[], cwd: string, id: s
     const finish = (code: number) => { if (settled) return; settled = true; clearTimeout(timer); runs.delete(id); resolve(code) }
     child.stdout?.on('data', (data: Buffer) => emitRun(id, data.toString(), 'stdout'))
     child.stderr?.on('data', (data: Buffer) => emitRun(id, data.toString(), 'stderr'))
-    child.on('error', (error) => { emitRun(id, `${label}: ${error.message}\r\n`, 'system'); finish(127) })
+    child.on('error', (error) => {
+      const message = (error as NodeJS.ErrnoException).code === 'ENOENT'
+        ? `${label} executable was not found (${executable}). Configure its path in Settings.`
+        : `${label}: ${error.message}`
+      emitRun(id, `${message}\r\n`, 'system'); finish(127)
+    })
     child.on('close', (code) => finish(code ?? 1))
     const timer = setTimeout(() => { emitRun(id, 'Process stopped after the 15 minute safety limit.\r\n', 'system'); killProcessTree(child) }, 15 * 60 * 1000)
   })
@@ -80,37 +108,23 @@ async function startRun(file: string, language: RunLanguage, runtimeConfig: Reco
   const source = await existingWorkspacePath(file)
   const info = await stat(source)
   if (!info.isFile()) throw new Error('Choose a source file to run.')
-  const extensionMap: Record<RunLanguage, string[]> = { c: ['.c'], cpp: ['.cpp', '.cc', '.cxx'], python: ['.py'], java: ['.java'], javascript: ['.js', '.mjs', '.cjs'] }
-  if (!extensionMap[language].includes(path.extname(source).toLowerCase())) throw new Error(`The selected file does not match ${language}.`)
   const id = randomUUID()
-  emitRun(id, `Starting ${path.basename(source)}…\r\n`, 'system')
-  const configured = runtimeConfig[language]
-  const defaults: Record<RunLanguage, string> = { c: 'gcc', cpp: 'g++', python: 'python', java: 'javac', javascript: 'node' }
-  const executable = configured?.trim() || defaults[language]
   const cwd = workspaceRoot!
+  const compiled = language === 'c' || language === 'cpp' || language === 'java'
+  const buildDirectory = path.join(app.getPath('temp'), 'aryan-ide-build', id)
+  const sourceText = language === 'java' ? await readFile(source, 'utf8') : ''
+  const plan = buildExecutionPlan(source, language, runtimeConfig, compiled ? buildDirectory : undefined, sourceText)
+  if (plan.compile) await mkdir(buildDirectory, { recursive: true })
+  emitRun(id, `Starting ${path.basename(source)}…\r\n`, 'system')
   void (async () => {
     try {
-      let code = 0
-      if (language === 'python') code = await runCommand(executable, [source], cwd, id, 'Python')
-      if (language === 'javascript') code = await runCommand(executable, [source], cwd, id, 'Node.js')
-      if (language === 'c' || language === 'cpp') {
-        const dir = path.join(app.getPath('temp'), 'aryan-ide-build', id)
-        await mkdir(dir, { recursive: true })
-        const binary = path.join(dir, process.platform === 'win32' ? 'program.exe' : 'program')
-        code = await runCommand(executable, ['-g', source, '-o', binary], cwd, id, language === 'c' ? 'GCC' : 'G++')
-        if (code === 0) code = await runCommand(binary, [], cwd, id, 'Program')
-      }
-      if (language === 'java') {
-        const dir = path.join(app.getPath('temp'), 'aryan-ide-build', id)
-        await mkdir(dir, { recursive: true })
-        code = await runCommand(executable, ['-d', dir, source], cwd, id, 'Java compiler')
-        if (code === 0) {
-          const java = runtimeConfig.javaRuntime?.trim() || 'java'
-          code = await runCommand(java, ['-cp', dir, path.basename(source, '.java')], cwd, id, 'Java runtime')
-        }
-      }
+      let code = plan.compile
+        ? await runCommand(plan.compile.executable, plan.compile.args, cwd, id, language === 'java' ? 'Java compiler' : language === 'c' ? 'GCC' : 'G++')
+        : 0
+      if (code === 0) code = await runCommand(plan.run.executable, plan.run.args, cwd, id, language === 'javascript' ? 'Node.js' : language === 'python' ? 'Python' : 'Program')
       emitRun(id, code === 0 ? '\r\nProcess finished with exit code 0.\r\n' : `\r\nProcess finished with exit code ${code}.\r\n`, 'exit')
     } catch (error) { emitRun(id, `${error instanceof Error ? error.message : String(error)}\r\n`, 'system'); emitRun(id, 'Process could not start.\r\n', 'exit') }
+    finally { if (plan.compile) await rm(buildDirectory, { recursive: true, force: true }).catch(() => {}) }
   })()
   return id
 }
@@ -142,9 +156,55 @@ function registerHandlers() {
   ipcMain.handle('workspace:list', async (_, target: string) => {
     const dir = target === workspaceRoot ? workspaceRoot : await existingWorkspacePath(target, true)
     const entries = await readdir(dir, { withFileTypes: true })
-    return entries.filter((e) => !['.git', 'node_modules', 'dist', 'out'].includes(e.name)).map((e) => ({ name: e.name, path: path.join(dir!, e.name), isDirectory: e.isDirectory() })).sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.name.localeCompare(b.name))
+    return entries.filter((e) => !['.git', 'node_modules', 'dist', 'out', 'release', '.next', '.cache', '.venv'].includes(e.name)).map((e) => ({ name: e.name, path: path.join(dir!, e.name), isDirectory: e.isDirectory() })).sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.name.localeCompare(b.name))
   })
-  ipcMain.handle('workspace:read', async (_, target: string) => readFile(await existingWorkspacePath(target), 'utf8'))
+  ipcMain.handle('workspace:search-text', async (_, rawQuery: string) => {
+    assertText(rawQuery, 'search query', 200)
+    if (!workspaceRoot) throw new Error('Open a workspace folder first.')
+    const query = rawQuery.trim().toLocaleLowerCase()
+    if (!query) return []
+    const results: { path: string; name: string; lineNumber: number; line: string }[] = []
+    const ignored = new Set(['.git', 'node_modules', 'dist', 'out', 'release', '.next', '.cache', '.venv'])
+    const stack = [workspaceRoot]
+    let filesScanned = 0
+    let bytesScanned = 0
+    while (stack.length && results.length < 100 && filesScanned < 2500 && bytesScanned < 40 * 1024 * 1024) {
+      const directory = stack.pop()!
+      let entries
+      try { entries = await readdir(directory, { withFileTypes: true }) } catch { continue }
+      for (const entry of entries) {
+        if (results.length >= 100 || filesScanned >= 2500 || bytesScanned >= 40 * 1024 * 1024) break
+        if (entry.isDirectory()) { if (!ignored.has(entry.name)) stack.push(path.join(directory, entry.name)); continue }
+        if (!entry.isFile()) continue
+        const candidate = path.join(directory, entry.name)
+        let real: string
+        let info
+        try { real = await existingWorkspacePath(candidate); info = await stat(real) } catch { continue }
+        if (info.size > 1024 * 1024) continue
+        filesScanned++; bytesScanned += info.size
+        let content: string
+        try {
+          const data = await readFile(real)
+          if (data.includes(0)) continue
+          content = data.toString('utf8')
+        } catch { continue }
+        const lines = content.split(/\r?\n/)
+        for (let index = 0; index < lines.length && results.length < 100; index++) {
+          if (lines[index].toLocaleLowerCase().includes(query)) results.push({ path: real, name: entry.name, lineNumber: index + 1, line: lines[index].trim().slice(0, 240) })
+        }
+      }
+    }
+    return results
+  })
+  ipcMain.handle('workspace:read', async (_, target: string) => {
+    const file = await existingWorkspacePath(target)
+    const info = await stat(file)
+    if (!info.isFile()) throw new Error('Choose a file to open.')
+    if (info.size > 5 * 1024 * 1024) throw new Error('Files larger than 5 MiB cannot be opened in the editor.')
+    const data = await readFile(file)
+    if (data.includes(0)) throw new Error('This looks like a binary file and cannot be shown in the text editor.')
+    return data.toString('utf8')
+  })
   ipcMain.handle('workspace:save', async (_, target: string, content: string) => {
     assertText(content, 'file content', 30_000_000)
     const file = await existingWorkspacePath(target)
@@ -285,15 +345,21 @@ function registerHandlers() {
     await writeState({ runtimes })
   })
   ipcMain.handle('extensions:list', async () => {
-    const roots = [path.join(app.getAppPath(), 'extensions'), path.join(app.getPath('userData'), 'extensions')]
-    const state = await readState(); const results = [] as { name: string; version: string; description: string; enabled: boolean; settings: { id: string; label: string; value: string }[] }[]
+    const roots = extensionRoots()
+    const state = await readState(); const results = [] as { name: string; version: string; description: string; enabled: boolean; settings: { id: string; label: string; value: string }[]; commands: { id: string; title: string; snippet: string }[]; editorActions: { id: string; title: string; snippet: string }[]; themes: { id: string; name: string; base: 'dark' | 'light'; accent: string }[] }[]
+    const seen = new Set<string>()
     for (const root of roots) {
       try { for (const dir of await readdir(root, { withFileTypes: true })) if (dir.isDirectory()) {
         try {
-          const manifest = JSON.parse(await readFile(path.join(root, dir.name, 'manifest.json'), 'utf8'))
-          if (typeof manifest.name === 'string' && typeof manifest.version === 'string' && typeof manifest.description === 'string') {
-            const settings = Array.isArray(manifest.settings) ? manifest.settings.filter((item: any) => item && typeof item.id === 'string' && typeof item.label === 'string' && item.type === 'string').slice(0, 20).map((item: any) => ({ id: item.id.slice(0, 80), label: item.label.slice(0, 120), value: String(state.extensionSettings?.[manifest.name]?.[item.id] ?? item.default ?? '').slice(0, 1000) })) : []
-            results.push({ name: manifest.name, version: manifest.version, description: manifest.description, enabled: state.extensionEnabled?.[manifest.name] !== false, settings })
+          const manifestFile = path.join(root, dir.name, 'manifest.json')
+          if ((await stat(manifestFile)).size > 256 * 1024) continue
+          const manifest = JSON.parse(await readFile(manifestFile, 'utf8'))
+          if (typeof manifest.name === 'string' && manifest.name.length > 0 && manifest.name.length <= 100 && typeof manifest.version === 'string' && manifest.version.length <= 40 && typeof manifest.description === 'string' && manifest.description.length <= 500 && !seen.has(manifest.name)) {
+            seen.add(manifest.name)
+            const settings = Array.isArray(manifest.settings) ? manifest.settings.filter((item: any) => item && typeof item.id === 'string' && typeof item.label === 'string' && item.type === 'string').slice(0, 20).map((item: any) => ({ id: item.id.slice(0, 80), label: item.label.slice(0, 120), value: String(state.extensionSettings?.[manifest.name]?.[item.id] ?? (typeof item.default === 'string' ? item.default : '')).slice(0, 1000) })) : []
+            const safeSnippets = (value: unknown) => Array.isArray(value) ? value.filter((item: any) => item && typeof item.id === 'string' && /^[a-zA-Z0-9._-]{1,80}$/.test(item.id) && typeof item.title === 'string' && item.title.length <= 100 && typeof item.snippet === 'string' && item.snippet.length <= 5000 && !item.snippet.includes('\0')).slice(0, 30).map((item: any) => ({ id: item.id, title: item.title, snippet: item.snippet })) : []
+            const themes = Array.isArray(manifest.contributions?.themes) ? manifest.contributions.themes.filter((item: any) => item && typeof item.id === 'string' && /^[a-zA-Z0-9._-]{1,80}$/.test(item.id) && typeof item.name === 'string' && item.name.length <= 100 && ['dark', 'light'].includes(item.base) && typeof item.accent === 'string' && /^#[0-9a-fA-F]{6}$/.test(item.accent)).slice(0, 20).map((item: any) => ({ id: item.id, name: item.name, base: item.base as 'dark' | 'light', accent: item.accent })) : []
+            results.push({ name: manifest.name, version: manifest.version, description: manifest.description, enabled: state.extensionEnabled?.[manifest.name] !== false, settings, commands: safeSnippets(manifest.contributions?.commands), editorActions: safeSnippets(manifest.contributions?.editorActions), themes })
           }
         } catch { /* malformed extension manifests are ignored */ }
       } } catch { /* extension directory may not exist */ }
@@ -304,12 +370,24 @@ function registerHandlers() {
     assertText(name, 'extension name', 200)
     if (typeof enabled !== 'boolean') throw new Error('Invalid extension state.')
     const state = await readState(); const extensionEnabled = { ...(state.extensionEnabled || {}), [name]: enabled }
-    await writeState({ extensionEnabled })
+    const extensionTheme = !enabled && state.extensionTheme?.name === name ? null : state.extensionTheme
+    await writeState({ extensionEnabled, extensionTheme })
   })
   ipcMain.handle('extensions:set-setting', async (_, name: string, id: string, value: string) => {
     assertText(name, 'extension name', 200); assertText(id, 'extension setting id', 80); assertText(value, 'extension setting', 1000)
     const state = await readState(); const extensionSettings = { ...(state.extensionSettings || {}), [name]: { ...(state.extensionSettings?.[name] || {}), [id]: value } }
     await writeState({ extensionSettings })
+  })
+  ipcMain.handle('extensions:active-theme', async () => (await readState()).extensionTheme || null)
+  ipcMain.handle('extensions:set-active-theme', async (_, theme: { name: string; id: string } | null) => {
+    if (theme === null) { await writeState({ extensionTheme: null }); return }
+    if (!theme || typeof theme !== 'object') throw new Error('Invalid extension theme.')
+    assertText(theme.name, 'extension name', 200); assertText(theme.id, 'theme id', 80)
+    const manifest = await readExtensionManifest(theme.name, theme.id)
+    if (!manifest) throw new Error('That theme is missing or invalid.')
+    const state = await readState()
+    if (state.extensionEnabled?.[theme.name] === false) throw new Error('Enable the extension before applying its theme.')
+    await writeState({ extensionTheme: { name: theme.name, id: theme.id } })
   })
   ipcMain.handle('window:control', async (_, action: string) => {
     if (!['minimize', 'maximize', 'close'].includes(action)) throw new Error('Unsupported window action.')

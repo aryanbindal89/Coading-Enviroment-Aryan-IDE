@@ -1,5 +1,7 @@
-# Sample extension
+# Aryan Sample Tools
 
-Aryan IDE discovers extension folders by reading `manifest.json`. The first version deliberately treats manifests as metadata and does not evaluate `entryPoint` code. This avoids silently granting downloaded JavaScript unrestricted access to the user's files or processes.
+This declarative sample adds an **Insert a greeting** command, an **Insert TODO comment** editor action, and the **Violet Dawn** accent theme. It also demonstrates a saved `signature` setting used through the `{{signature}}` snippet placeholder.
 
-Manifests require `name`, `version`, and `description`. Future extension APIs should use explicit, narrowly scoped capabilities and run in an isolated process. Do not put secrets in an extension folder.
+Open the Command Palette with `Ctrl+Shift+P`, or open the Extensions panel to run the sample actions, edit its setting, or apply its theme. All contributions are validated JSON. No JavaScript entry point runs.
+
+See the root [EXTENSIONS.md](../../EXTENSIONS.md) for the manifest format and limits.
