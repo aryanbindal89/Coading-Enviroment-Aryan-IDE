@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="330" viewBox="0 0 1120 330" role="img" aria-labelledby="title description">
+  <title id="title">Aryan IDE declarative extension workflow</title>
+  <desc id="description">A manifest is validated, its declared contributions are shown in the IDE, and a user invokes or reviews them. Extension JavaScript is not executed.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#191527"/>
+      <stop offset="1" stop-color="#101116"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#c4b5fd"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <rect width="1120" height="330" rx="22" fill="url(#bg)" stroke="#363142"/>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <text x="42" y="46" font-size="11" font-weight="700" letter-spacing="1.8" fill="#c4b5fd">DECLARATIVE EXTENSIONS</text>
+    <text x="42" y="72" font-size="13" fill="#aaa5b5">Small contributions, checked before they reach the editor.</text>
+
+    <rect x="42" y="104" width="282" height="112" rx="13" fill="#191a23" stroke="#423953"/>
+    <circle cx="76" cy="140" r="17" fill="#a78bfa" fill-opacity=".15"/>
+    <path d="M68 132h16v16H68zM71 136h10M71 140h10M71 144h7" fill="none" stroke="#c4b5fd" stroke-width="1.4" stroke-linecap="round"/>
+    <text x="104" y="139" font-size="13" font-weight="700" fill="#f1edf8">manifest.json</text>
+    <text x="64" y="177" font-size="11" fill="#aaa5b5">Declare commands, snippets, themes,</text>
+    <text x="64" y="194" font-size="11" fill="#aaa5b5">and simple string settings.</text>
+
+    <path d="M339 160h48" stroke="url(#accent)" stroke-width="2" stroke-linecap="round"/>
+    <path d="m380 153 8 7-8 7" fill="none" stroke="#b7a1ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <rect x="398" y="104" width="300" height="112" rx="13" fill="#191a23" stroke="#423953"/>
+    <circle cx="433" cy="140" r="17" fill="#70d7ad" fill-opacity=".12"/>
+    <path d="m425 140 5 5 11-12" fill="none" stroke="#70d7ad" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="461" y="139" font-size="13" font-weight="700" fill="#f1edf8">Validate and list</text>
+    <text x="420" y="177" font-size="11" fill="#aaa5b5">The IDE checks the JSON shape and</text>
+    <text x="420" y="194" font-size="11" fill="#aaa5b5">limits before showing contributions.</text>
+
+    <path d="M713 160h48" stroke="url(#accent)" stroke-width="2" stroke-linecap="round"/>
+    <path d="m754 153 8 7-8 7" fill="none" stroke="#b7a1ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <rect x="772" y="104" width="306" height="112" rx="13" fill="#191a23" stroke="#423953"/>
+    <circle cx="807" cy="140" r="17" fill="#8cb9ed" fill-opacity=".13"/>
+    <path d="M800 132h14v16h-14zM803 136h8m-8 4h8m-8 4h5" fill="none" stroke="#9dcaf2" stroke-width="1.4" stroke-linecap="round"/>
+    <text x="835" y="139" font-size="13" font-weight="700" fill="#f1edf8">Use from the IDE</text>
+    <text x="794" y="177" font-size="11" fill="#aaa5b5">Invoke a command, review a snippet,</text>
+    <text x="794" y="194" font-size="11" fill="#aaa5b5">or apply a validated accent theme.</text>
+
+    <rect x="42" y="243" width="1036" height="51" rx="10" fill="#211a28" stroke="#59406c"/>
+    <circle cx="69" cy="268" r="11" fill="#a78bfa" fill-opacity=".17"/>
+    <path d="M69 261v9m0 4h.1" stroke="#c4b5fd" stroke-width="1.8" stroke-linecap="round"/>
+    <text x="92" y="264" font-size="11" font-weight="700" fill="#e1d8f2">No JavaScript entry points execute.</text>
+    <text x="92" y="280" font-size="10" fill="#aaa5b5">Version 1 extensions contribute data only; they receive no implicit filesystem, process, network, or credential access.</text>
+  </g>
+</svg>
